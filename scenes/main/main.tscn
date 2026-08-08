@@ -1,6 +1,7 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://scenes/main/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scenes/main/arena_stage.gd" id="17_stage"]
 [ext_resource type="Texture2D" path="res://assets/sprites/floor.png" id="0_floor"]
 [ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="2_player"]
 [ext_resource type="Script" path="res://scenes/enemies/spawner.gd" id="3_spawner"]
@@ -25,7 +26,26 @@ size = Vector2(32, 784)
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 
-[node name="Floor" type="Sprite2D" parent="."]
+; THE ARENA IS RENDERED, NOT DRAWN DIRECTLY. Everything below WorldViewport is
+; the same 2D game it has always been; it just renders off-screen so ArenaStage
+; can put it on a floor in 3D and lean the camera over it for a boss.
+;
+; UI STAYS OUT HERE ON PURPOSE. Hud, LevelUpPanel, PausePanel, GameOver, Victory
+; and TrueEnding are all CanvasLayer, so out here they render to the root
+; viewport in screen space and stay flat while the world tilts. Inside the
+; SubViewport they would be painted onto the floor and lean with it, which puts
+; the pause menu on a slope.
+;
+; Spawner and RunDirector are pure logic with no position, so they have no
+; reason to be inside a viewport.
+[node name="ArenaStage" type="Node3D" parent="."]
+script = ExtResource("17_stage")
+
+[node name="WorldViewport" type="SubViewport" parent="ArenaStage"]
+size = Vector2i(640, 360)
+render_target_update_mode = 3
+
+[node name="Floor" type="Sprite2D" parent="ArenaStage/WorldViewport"]
 z_index = -10
 texture_repeat = 2
 texture = ExtResource("0_floor")
@@ -33,37 +53,37 @@ centered = false
 region_enabled = true
 region_rect = Rect2(0, 0, 1280, 720)
 
-[node name="Walls" type="StaticBody2D" parent="."]
+[node name="Walls" type="StaticBody2D" parent="ArenaStage/WorldViewport"]
 collision_layer = 16
 collision_mask = 0
 
-[node name="Top" type="CollisionShape2D" parent="Walls"]
+[node name="Top" type="CollisionShape2D" parent="ArenaStage/WorldViewport/Walls"]
 position = Vector2(640, -16)
 shape = SubResource("RectangleShape2D_h")
 
-[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+[node name="Bottom" type="CollisionShape2D" parent="ArenaStage/WorldViewport/Walls"]
 position = Vector2(640, 736)
 shape = SubResource("RectangleShape2D_h")
 
-[node name="Left" type="CollisionShape2D" parent="Walls"]
+[node name="Left" type="CollisionShape2D" parent="ArenaStage/WorldViewport/Walls"]
 position = Vector2(-16, 360)
 shape = SubResource("RectangleShape2D_v")
 
-[node name="Right" type="CollisionShape2D" parent="Walls"]
+[node name="Right" type="CollisionShape2D" parent="ArenaStage/WorldViewport/Walls"]
 position = Vector2(1296, 360)
 shape = SubResource("RectangleShape2D_v")
 
-[node name="Pickups" type="Node2D" parent="."]
+[node name="Pickups" type="Node2D" parent="ArenaStage/WorldViewport"]
 
-[node name="Enemies" type="Node2D" parent="."]
+[node name="Enemies" type="Node2D" parent="ArenaStage/WorldViewport"]
 
-[node name="Projectiles" type="Node2D" parent="."]
+[node name="Projectiles" type="Node2D" parent="ArenaStage/WorldViewport"]
 
-[node name="Bosses" type="Node2D" parent="."]
+[node name="Bosses" type="Node2D" parent="ArenaStage/WorldViewport"]
 
-[node name="EnemyBolts" type="Node2D" parent="."]
+[node name="EnemyBolts" type="Node2D" parent="ArenaStage/WorldViewport"]
 
-[node name="Player" parent="." instance=ExtResource("2_player")]
+[node name="Player" parent="ArenaStage/WorldViewport" instance=ExtResource("2_player")]
 position = Vector2(640, 360)
 
 [node name="Spawner" type="Node" parent="."]

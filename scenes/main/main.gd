@@ -1,4 +1,4 @@
-﻿extends Node2D
+extends Node2D
 ## Run orchestrator: owns run state (time, kills, xp) and wires everything.
 ## Children signal up; Main calls down. Nothing else knows about Main.
 
@@ -107,16 +107,24 @@ var _dev_autocontinue: bool = false
 var _dev_stats_t: float = 0.0
 var _tele_t: float = 0.0
 
-@onready var player: Player = $Player
+## The 2D arena renders into ArenaStage/WorldViewport rather than straight to the
+## screen, so everything with a POSITION in the arena lives one level deeper now.
+## These are still plain object references — nothing below re-resolves a path, so
+## the move cost exactly these six lines.
+##
+## The UI does NOT move. Every screen is a CanvasLayer and stays a direct child
+## of Main, which keeps it in the root viewport and flat while the world tilts.
+@onready var stage: ArenaStage = $ArenaStage
+@onready var player: Player = $ArenaStage/WorldViewport/Player
+@onready var bosses: Node2D = $ArenaStage/WorldViewport/Bosses
+@onready var enemy_bolts: Node2D = $ArenaStage/WorldViewport/EnemyBolts
+@onready var enemies: Node2D = $ArenaStage/WorldViewport/Enemies
+@onready var pickups: Node2D = $ArenaStage/WorldViewport/Pickups
+@onready var projectiles: Node2D = $ArenaStage/WorldViewport/Projectiles
 @onready var spawner: Spawner = $Spawner
 @onready var director: RunDirector = $RunDirector
-@onready var bosses: Node2D = $Bosses
-@onready var enemy_bolts: Node2D = $EnemyBolts
 @onready var victory_screen: VictoryScreen = $Victory
 @onready var true_ending: TrueEndingScreen = $TrueEnding
-@onready var enemies: Node2D = $Enemies
-@onready var pickups: Node2D = $Pickups
-@onready var projectiles: Node2D = $Projectiles
 @onready var level_up_panel: LevelUpPanel = $LevelUpPanel
 @onready var hud: Hud = $Hud
 @onready var game_over: GameOverScreen = $GameOver
@@ -484,6 +492,10 @@ func _on_enemy_spawned(enemy: Enemy) -> void:
 ## A boss is just a very large enemy as far as kills, XP and juice are concerned
 ## — except in the mix, where its arrival and death are the run's loudest beats.
 func _on_boss_spawned(boss: Node2D) -> void:
+	# The world leans. Called per BOSS, not per event, and the 10:00 event spawns
+	# NOGAXEH plus two escorts in a single tick — enter_boss retargets one tween
+	# rather than stacking three, so that is a no-op after the first.
+	stage.enter_boss()
 	boss.died.connect(_on_enemy_died)
 	boss.died.connect(_on_boss_killed)
 	var mirror: Nogaxeh = boss as Nogaxeh
@@ -609,6 +621,10 @@ func _on_victory(_event_index: int) -> void:
 ## The mirror event is the run's real ending and gets its own screen; every other
 ## later event is just endless getting harder and says nothing.
 func _on_boss_event_cleared(event_index: int) -> void:
+	# Lay the world flat again. BEFORE the early return below, which only covers
+	# the mirror event — put it after and every other boss in the game would tilt
+	# the arena and never untilt it.
+	stage.exit_boss()
 	# Counted for EVERY event, including the ones deep in endless: the skill
 	# tree's currency is depth-weighted, and this is the depth.
 	run_state.boss_events += 1
