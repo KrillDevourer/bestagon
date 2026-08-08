@@ -50,17 +50,50 @@ const ACCEL: float = 12.0
 ## produce a number that looks principled and plays wrong.
 const BASE_SPEED: float = 6.2
 
+## Invulnerability after a hit. The arena's value, not a duel-specific one -- the
+## fight is harder or easier than the 2D game for design reasons, never because two
+## copies of the same rule drifted apart.
+const HIT_IFRAMES: float = 0.6
+
+signal died
+signal health_changed(hp: int, max_hp: int)
+
 var speed: float = BASE_SPEED
+## THE SHARED RULE. Not a duel-local hp int: Health is RefCounted with time
+## injected, so the duel runs the same HP arithmetic, the same i-frame windows and
+## the same shield interaction as the arena. Assigned by the arena from the run's
+## real health so a duel starts on the HP the player walked in with.
+var health: Health
 
 var _yaw: float = 0.0
 var _pitch: float = 0.0
+## Own clock, because Health takes time as an argument rather than reading one.
+## Starts at 0 on entering the duel, which is safe precisely because every window
+## Health tracks is relative.
+var _time: float = 0.0
 
 @onready var camera: Camera3D = $Camera3D
 
 
 func _ready() -> void:
 	camera.position = Vector3(0.0, EYE_HEIGHT, 0.0)
+	if health == null:
+		# Standalone inspection only. A real duel is handed the run's own Health.
+		health = Health.new(12, HIT_IFRAMES)
+	health.died.connect(func() -> void: died.emit())
+	health.changed.connect(func(hp: int, max_hp: int) -> void:
+		health_changed.emit(hp, max_hp))
 	capture_mouse(true)
+
+
+## Enemy fire landed. Named for what hit rather than for what it does, matching
+## Player.apply_damage's `source` habit -- BRIEF defect #4 is a run that ends
+## without the player understanding why, and "a bolt" is an answer.
+func take_bolt(amount: int) -> void:
+	if health == null:
+		return
+	if health.take_damage(amount, _time):
+		Sfx.play(&"hurt", -2.0)
 
 
 ## Public because Main and the pause menu both need to let go of the cursor, and
@@ -91,6 +124,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_time += delta
 	# The same four actions the 2D game uses, so the duel needs no new bindings
 	# and a rebound key works in both halves of the game.
 	var input: Vector2 = Input.get_vector(&"move_left", &"move_right",

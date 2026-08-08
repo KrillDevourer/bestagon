@@ -76,12 +76,14 @@ const FLOOR_TINT: Color = Color(0.55, 0.58, 0.95)
 const WALL_TINT: Color = Color(0.10, 0.10, 0.19)
 
 var player: DuelPlayer
-var boss: MeshInstance3D
-var _boss_pivot: Node3D
+var boss: DuelBoss
 
 ## Injected by Main before this scene is added. Nothing here reads a global.
 var boss_stats: EnemyStats
 var boss_sides: int = PolyPrism.DEFAULT_SIDES
+## The run's own Health, so a duel starts on the HP the player walked in with and
+## a hit taken here is a hit taken in the run. Null only when loaded standalone.
+var player_health: Health
 
 var _time: float = 0.0
 
@@ -197,54 +199,54 @@ func _build_room() -> void:
 ## count, so the thing the player has been shooting at from above is recognisably
 ## the thing now standing in front of them -- a pentagon for THE PRISM, a hexagon
 ## only for NOGAXEH.
+##
+## Its body, phases and volleys live in DuelBoss. This scene owns the ROOM; a boss
+## that grew its attack pattern inside the arena script would put two unrelated
+## responsibilities in one file, and the arena would have to be edited every time
+## a boss learned a new move.
 func _build_boss() -> void:
-	var tint: Color = boss_stats.tint if boss_stats != null else Color(1.0, 0.42, 0.85)
-	var mat: StandardMaterial3D = StandardMaterial3D.new()
-	mat.albedo_color = tint
-	mat.metallic = 0.3
-	mat.roughness = 0.26
-	# gl_compatibility has no glow pass (see enemy.gd), so emission is the only way
-	# the solid keeps the lit-from-within look. It brightens facets; it does not
-	# bloom, and it must not pretend to.
-	mat.emission_enabled = true
-	mat.emission = tint
-	mat.emission_energy_multiplier = 0.4
-
-	# CANTED, and this is not decoration -- it is the only way the boss's identity
-	# survives first person.
-	#
-	# At eye level a prism's silhouette is a RECTANGLE regardless of side count:
-	# the vertical facets face you and the caps are edge-on or hidden. THE PRISM's
-	# pentagon and NOGAXEH's hexagon are the whole point of the two bosses being
-	# different things, and both read as "box" from the floor. The shape is only
-	# legible from ABOVE, which is exactly the view the duel takes away.
-	#
-	# Tipping it over brings the cap into view and turns the polygon back into the
-	# thing that names it. It also stops the boss reading as a pillar and starts it
-	# reading as something floating, which is what it is.
-	_boss_pivot = Node3D.new()
-	_boss_pivot.position = Vector3(0.0, BOSS_HOVER, 0.0)
-	add_child(_boss_pivot)
-
-	boss = MeshInstance3D.new()
-	boss.mesh = PolyPrism.build(BOSS_RADIUS, BOSS_HEIGHT, boss_sides)
-	boss.material_override = mat
-	boss.rotation_degrees = Vector3(0.0, 0.0, BOSS_CANT_DEG)
-	_boss_pivot.add_child(boss)
+	boss = DuelBoss.new()
+	if boss_stats != null:
+		boss.tint = boss_stats.tint
+		boss.damage = boss_stats.damage
+		boss.max_hp = boss_stats.max_hp
+		boss.hp = boss_stats.max_hp
+	boss.sides = boss_sides
+	boss.name = "DuelBoss"
+	add_child(boss)
 
 
 func _build_player() -> void:
 	player = PLAYER_SCENE.instantiate() as DuelPlayer
 	player.position = Vector3(0.0, 0.2, PLAYER_START_Z)
+	player.health = player_health
 	add_child(player)
-	# Face the boss on the first frame. Being dropped into a duel looking at a
-	# wall is the kind of thing that reads as the scene having failed to load.
+	# Face the boss on the first frame. Being dropped into a duel looking at a wall
+	# is the kind of thing that reads as the scene having failed to load.
 	player.look_at_boss(boss.global_position)
+	# Bolts are parented to the ARENA, not the boss: parented to the boss they
+	# would inherit its hover, its spin and its cant, so a volley would swing
+	# around with the thing that fired it instead of flying straight. Same reason
+	# the 2D game hands EnemyProjectile a bolt_container.
+	boss.configure(self, player)
+	boss.died.connect(_on_boss_died)
+	player.died.connect(_on_player_died)
+
+
+func _on_boss_died() -> void:
+	# The boss's body goes; its bolts do NOT. A volley already in the air stays
+	# lethal, so killing the boss on its wind-up does not erase the shot you
+	# should still have to dodge.
+	if is_instance_valid(boss):
+		boss.queue_free()
+	player.capture_mouse(false)
+	finished.emit(true)
+
+
+func _on_player_died() -> void:
+	player.capture_mouse(false)
+	finished.emit(false)
 
 
 func _process(delta: float) -> void:
 	_time += delta
-	if not is_instance_valid(_boss_pivot):
-		return
-	_boss_pivot.rotation.y += delta * BOSS_SPIN
-	_boss_pivot.position.y = BOSS_HOVER + sin(_time * BOB_RATE) * BOB_AMPLITUDE

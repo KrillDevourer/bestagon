@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/duel/duel_bolt.gd" id="1_db"]
+
+; Layer 6 = enemy_projectiles, mask 1 = player, mirroring the 2D layer names so
+; both combat models describe the same things with the same numbers. 3D layers are
+; a separate register from 2D layers in Godot; keeping them aligned is a
+; readability choice rather than a requirement.
+[node name="DuelBolt" type="Area3D" groups=["enemy_projectiles"]]
+collision_layer = 32
+collision_mask = 1
+monitoring = true
+script = ExtResource("1_db")
+
+[node name="Visual" type="MeshInstance3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
