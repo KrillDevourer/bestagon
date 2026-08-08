@@ -126,6 +126,52 @@ function Invoke-Step {
   return $out
 }
 
+# BOTH GUARDS BELOW ARE ONLY AS REAL AS git IS.
+#
+# Each one used to iterate `@(& git -C $root ls-files ...)` directly. When git is
+# not installed that expression is an EMPTY ARRAY: no paths to scan, so no
+# violations found, so "ok" in green. The guard does not fail, it EVAPORATES.
+#
+# Measured 2026-08-07 on a clean Windows box with Godot present and git not on
+# PATH: both guards printed ok while PowerShell wrote CommandNotFoundException to
+# stderr underneath each of them, and VERIFY PASSED at the end. The two checks
+# that exist to defend this public repo's central promise - no absolute paths, no
+# tracked build artifacts - were the only two stages in the gate that could not
+# fail, on exactly the machine most likely to be a stranger's fresh clone.
+#
+# This is the same class of bug as review finding 29 (a smoke test that booted the
+# title screen and so could not fail) and as the Test-IsErrorLine case-sensitivity
+# bug directly above. find_godot.ps1 was written because a missing ENGINE produced
+# five failures that never said "engine"; nobody then asked what a missing git
+# produced. It produced silence, which is worse.
+#
+# Returns $null when git could not answer, which is a DIFFERENT thing from an
+# empty list and is what the callers now branch on.
+function Get-TrackedFiles {
+  param([string[]]$Spec = @())
+
+  if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
+    return $null
+  }
+  $out = & git -C $root ls-files @Spec
+  # A non-zero exit means "not a repository", a broken index, or a bad pathspec.
+  # All of those must fail loudly rather than read as a clean scan.
+  if ($LASTEXITCODE -ne 0) { return $null }
+  return @($out)
+}
+
+# What a guard prints when it could not run at all. Named so both callers say the
+# same thing - the point of the fix is that this state is never mistaken for ok.
+function Write-GuardUnavailable {
+  param([string]$Name)
+
+  $script:failed += "$Name (COULD NOT RUN - git unavailable)"
+  Write-Host "  CANNOT RUN: git is not on PATH, or this is not a git checkout." -ForegroundColor Red
+  Write-Host "  This guard scans TRACKED files, so it needs git to know what is tracked." -ForegroundColor Red
+  Write-Host "  It is reported as a FAILURE and not as ok, because a guard that did not" -ForegroundColor Red
+  Write-Host "  run has proven nothing. Install git, or run the gate from a real clone." -ForegroundColor Red
+}
+
 # ABSOLUTE PATH GUARD. This repo is PUBLIC, and an absolute path in it is never a
 # local convenience - it is a claim that only works on one machine, and it is
 # invisible to the person who wrote it. tools/build_music.py carried a hardcoded
@@ -140,19 +186,30 @@ function Invoke-Step {
 Write-Host ""
 Write-Host "=== absolute path guard ===" -ForegroundColor Cyan
 $pattern = '(?<![A-Za-z])[A-Za-z]:[\\/]|[\\/](Users|home)[\\/]'
-$hits = @()
-foreach ($rel in @(& git -C $root ls-files -- '*.gd' '*.py' '*.ps1' '*.mjs')) {
-  $full = Join-Path $root $rel
-  if (-not (Test-Path $full)) { continue }
-  foreach ($m in (Select-String -Path $full -Pattern $pattern -AllMatches)) {
-    $hits += ("  {0}:{1}: {2}" -f $rel, $m.LineNumber, $m.Line.Trim())
-  }
-}
-if ($hits.Count -gt 0) {
-  $script:failed += "absolute path guard ($($hits.Count) found)"
-  $hits | Select-Object -First 8 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+$code = Get-TrackedFiles @('--', '*.gd', '*.py', '*.ps1', '*.mjs')
+if ($null -eq $code) {
+  Write-GuardUnavailable "absolute path guard"
+} elseif ($code.Count -eq 0) {
+  # git answered, and said this repo tracks no code at all. That is not a clean
+  # scan either - it means the pathspec stopped matching, and the guard would go
+  # on printing ok forever while covering nothing.
+  $script:failed += "absolute path guard (matched 0 tracked source files)"
+  Write-Host "  NO FILES MATCHED: the pathspec covers nothing, so this proved nothing." -ForegroundColor Red
 } else {
-  Write-Host "  ok" -ForegroundColor Green
+  $hits = @()
+  foreach ($rel in $code) {
+    $full = Join-Path $root $rel
+    if (-not (Test-Path $full)) { continue }
+    foreach ($m in (Select-String -Path $full -Pattern $pattern -AllMatches)) {
+      $hits += ("  {0}:{1}: {2}" -f $rel, $m.LineNumber, $m.Line.Trim())
+    }
+  }
+  if ($hits.Count -gt 0) {
+    $script:failed += "absolute path guard ($($hits.Count) found)"
+    $hits | Select-Object -First 8 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+  } else {
+    Write-Host "  ok ($($code.Count) tracked source files)" -ForegroundColor Green
+  }
 }
 
 # BUILD ARTIFACT GUARD. The guard above reads text, so a COMPILED artifact walks
@@ -167,15 +224,23 @@ if ($hits.Count -gt 0) {
 # on what is TRACKED, which is the thing that actually ships.
 Write-Host ""
 Write-Host "=== build artifact guard ===" -ForegroundColor Cyan
-$artifacts = @(& git -C $root ls-files) | Where-Object {
-  $_ -match '(^|/)__pycache__/' -or $_ -match '\.py[co]$' -or $_ -match '(^|/)node_modules/'
-}
-if ($artifacts.Count -gt 0) {
-  $script:failed += "build artifact guard ($($artifacts.Count) tracked)"
-  Write-Host "  tracked build artifacts - untrack these, they are not source:" -ForegroundColor Red
-  $artifacts | Select-Object -First 8 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+$tracked = Get-TrackedFiles
+if ($null -eq $tracked) {
+  Write-GuardUnavailable "build artifact guard"
+} elseif ($tracked.Count -eq 0) {
+  $script:failed += "build artifact guard (0 tracked files)"
+  Write-Host "  NO FILES TRACKED: nothing was scanned, so this proved nothing." -ForegroundColor Red
 } else {
-  Write-Host "  ok" -ForegroundColor Green
+  $artifacts = @($tracked | Where-Object {
+    $_ -match '(^|/)__pycache__/' -or $_ -match '\.py[co]$' -or $_ -match '(^|/)node_modules/'
+  })
+  if ($artifacts.Count -gt 0) {
+    $script:failed += "build artifact guard ($($artifacts.Count) tracked)"
+    Write-Host "  tracked build artifacts - untrack these, they are not source:" -ForegroundColor Red
+    $artifacts | Select-Object -First 8 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+  } else {
+    Write-Host "  ok ($($tracked.Count) tracked files)" -ForegroundColor Green
+  }
 }
 
 Invoke-Step "import" @('--headless','--import','--path',$root) | Out-Null
