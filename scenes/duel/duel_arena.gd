@@ -84,7 +84,14 @@ var boss_sides: int = PolyPrism.DEFAULT_SIDES
 ## The run's own Health, so a duel starts on the HP the player walked in with and
 ## a hit taken here is a hit taken in the run. Null only when loaded standalone.
 var player_health: Health
+## The duel weapon's per-shot damage, derived from the run's loadout by
+## DuelWeapon.derive. 0 leaves the weapon's own standalone default.
+var weapon_damage: int = 0
+## What the boss bar is titled. The run knows the name; this scene does not.
+var boss_title: String = "THE PRISM"
 
+var weapon: DuelWeapon
+var hud: DuelHud
 var _time: float = 0.0
 
 
@@ -232,6 +239,36 @@ func _build_player() -> void:
 	boss.died.connect(_on_boss_died)
 	player.died.connect(_on_player_died)
 
+	# The weapon is a child of the PLAYER so it goes wherever they go, but its shots
+	# are parented to the ARENA -- on the player they would inherit the body's yaw
+	# and every shot already in flight would swing when the view turned.
+	weapon = DuelWeapon.new()
+	weapon.name = "DuelWeapon"
+	if weapon_damage > 0:
+		weapon.damage = weapon_damage
+	player.add_child(weapon)
+	weapon.configure(player, self)
+
+	hud = DuelHud.new()
+	hud.boss_tint = boss.tint
+	hud.boss_title = boss_title
+	add_child(hud)
+	# Pushed once now, because both bars would otherwise sit empty until the first
+	# hit landed -- and a boss bar that reads zero before the fight starts looks
+	# like the fight is already over.
+	hud.set_boss_health(boss.hp, boss.max_hp)
+	hud.set_player_health(player.health.hp, player.health.max_hp)
+	boss.health_changed.connect(hud.set_boss_health)
+	player.health_changed.connect(hud.set_player_health)
+
+
+## Stop shooting. The duel is over either way, and a weapon that kept firing into
+## an empty room past the outcome banner reads as the game not having noticed.
+func _end_duel() -> void:
+	if is_instance_valid(weapon):
+		weapon.set_process(false)
+	player.capture_mouse(false)
+
 
 func _on_boss_died() -> void:
 	# The boss's body goes; its bolts do NOT. A volley already in the air stays
@@ -239,12 +276,14 @@ func _on_boss_died() -> void:
 	# should still have to dodge.
 	if is_instance_valid(boss):
 		boss.queue_free()
-	player.capture_mouse(false)
+	_end_duel()
+	hud.show_outcome(true)
 	finished.emit(true)
 
 
 func _on_player_died() -> void:
-	player.capture_mouse(false)
+	_end_duel()
+	hud.show_outcome(false)
 	finished.emit(false)
 
 

@@ -27,6 +27,7 @@ extends Node3D
 signal died
 signal phase_changed(phase: int)
 signal telegraph_started(seconds: float)
+signal health_changed(hp: int, max_hp: int)
 
 const BOLT_SCENE: PackedScene = preload("res://scenes/duel/duel_bolt.tscn")
 
@@ -134,6 +135,39 @@ func _build_body() -> void:
 	_mesh.material_override = _material
 	_mesh.rotation_degrees = Vector3(0.0, 0.0, CANT_DEG)
 	_pivot.add_child(_mesh)
+	_build_hitbox()
+
+
+## THE BOSS MUST BE HITTABLE, and this is the single most important line in the
+## file. boss.gd records what happened when a boss only RESEMBLED the thing the
+## rest of the game hits: "it shipped that way for one build; the boss spawned on
+## time and simply could not be killed." A Node3D with a mesh and no collider is
+## exactly that failure in a new coordinate system -- it would look completely
+## correct and be invulnerable.
+##
+## A CYLINDER rather than a box or a convex hull of the mesh: the solid spins and
+## tumbles, and a hitbox that rotated with it would make the boss narrower or wider
+## depending on which facet happened to be facing the player. A cylinder is
+## rotation-invariant about the axis that matters, so the fight is the same fight at
+## every moment of the spin. It is UNPARENTED from the spin pivot for the same
+## reason.
+func _build_hitbox() -> void:
+	var hitbox: Area3D = Area3D.new()
+	# Layer 2 = enemies, mask 3 = projectiles, mirroring the 2D layer names.
+	hitbox.collision_layer = 1 << 1
+	hitbox.collision_mask = 1 << 2
+	hitbox.monitorable = true
+	hitbox.monitoring = true
+	var shape: CollisionShape3D = CollisionShape3D.new()
+	var cyl: CylinderShape3D = CylinderShape3D.new()
+	# Generous: the cant tips the solid so its corners reach further than `radius`,
+	# and a boss you can visibly graze without damaging is worse than one that is
+	# slightly easy to hit.
+	cyl.radius = radius * 1.05
+	cyl.height = height * 1.1
+	shape.shape = cyl
+	hitbox.add_child(shape)
+	add_child(hitbox)
 
 
 func _process(delta: float) -> void:
@@ -219,8 +253,10 @@ func take_hit(amount: int) -> void:
 	if hp <= 0:
 		return
 	hp = maxi(0, hp - amount)
+	health_changed.emit(hp, max_hp)
 	_flash()
 	if hp <= 0:
+		Sfx.play(&"boss_death", 0.0)
 		died.emit()
 		return
 	# `while`, not `if`: one very large hit can cross two thresholds at once, and a

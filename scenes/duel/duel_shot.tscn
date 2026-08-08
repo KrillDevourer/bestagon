@@ -1,0 +1,18 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/duel/duel_shot.gd" id="1_ds"]
+
+; Layer 3 = projectiles, mask 2 = enemies, mirroring the 2D layer names.
+; monitorable so the boss's own hitbox can see it too; monitoring so this sees the
+; boss. Both directions, because an Area3D pair where only one side watches is the
+; classic way a hit silently does not register.
+[node name="DuelShot" type="Area3D" groups=["projectiles"]]
+collision_layer = 4
+collision_mask = 2
+monitoring = true
+monitorable = true
+script = ExtResource("1_ds")
+
+[node name="Visual" type="MeshInstance3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
