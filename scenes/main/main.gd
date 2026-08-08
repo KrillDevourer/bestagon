@@ -180,6 +180,13 @@ func _ready() -> void:
 	# game's strongest restart hook fired in complete silence, and a player who
 	# won and pressed Continue met endless without the dash they had just earned.
 	Meta.unlocked.connect(_on_unlocked)
+	# THE CURSOR FOLLOWS THE PAUSE PANEL, for the whole duration of a duel.
+	#
+	# Wired to visibility_changed rather than to the places that pause and resume,
+	# because the panel is dismissed by at least three routes -- the ESC key, its own
+	# buttons, and the focus-loss auto-pause -- and a cursor released on only the ESC
+	# route locks the player out of a menu they can see and cannot click.
+	pause_panel.visibility_changed.connect(_sync_duel_cursor)
 	player.died.connect(_on_player_died)
 	player.second_wind.connect(_on_second_wind)
 	player.hurt.connect(_on_player_hurt)
@@ -388,7 +395,15 @@ func _notification(what: int) -> void:
 	# anything up -- focus events fire during startup on some platforms.
 	if not is_node_ready() or _modal_open() or pause_panel == null or pause_panel.visible:
 		return
-	_pause_if_playing()
+	# SAY "focus", because this is the focus path. It called _pause_if_playing()
+	# with no argument, which takes the default -- and the default is "key", so
+	# every alt-tab in the log has always been indistinguishable from a keypress.
+	# _pause_if_playing's own docstring is built on telling those two apart ("a log
+	# ending at reason=focus, that hypothesis graduates to the fix list; a log that
+	# ends at reason=key points somewhere else entirely"), so the one diagnostic the
+	# reason string exists for could never fire. Found while chasing an unexplained
+	# `[pause] reason=key` in a capture run that pressed nothing.
+	_pause_if_playing("focus")
 
 
 ## Shove the crowd off the player when a hit lands.
@@ -586,6 +601,19 @@ func _on_boss_spawned(boss: Node2D) -> void:
 ## does: that flip is a reveal staged over a couple of seconds against a boss that
 ## has just walked on screen, and a health bar that renamed itself mid-fight would
 ## read as a glitch instead of a reveal.
+## Captured while a duel is playing, visible while it is paused. A no-op when no
+## duel is on, so the 2D game's cursor behaviour is untouched.
+##
+## ESC reaches Main at all because DuelPlayer's _unhandled_input consumes ONLY
+## mouse motion and never calls set_input_as_handled -- Godot delivers unhandled
+## input deepest-node-first, so a duel that swallowed everything would have taken
+## the pause key with it.
+func _sync_duel_cursor() -> void:
+	if _duel == null or not is_instance_valid(_duel.player):
+		return
+	_duel.player.capture_mouse(not pause_panel.visible)
+
+
 func _boss_title(boss: Boss) -> String:
 	return "NOGAXEH" if boss is Nogaxeh else "THE PRISM"
 

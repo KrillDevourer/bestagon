@@ -104,7 +104,20 @@ func take_bolt(amount: int) -> void:
 
 ## Public because Main and the pause menu both need to let go of the cursor, and
 ## because the web build cannot capture until the player has clicked something.
+##
+## A CAPTURE RUN IS NOT A PLAYER, and this guard is the same one Main uses to stop
+## focus-pause photographing the pause menu. A screenshot run is launched from a
+## terminal and never holds focus, so grabbing the cursor there makes the OS fight
+## over a window nobody is looking at: the first capture of an integrated duel came
+## back with `[pause] reason=focus`, `reason=key`, `reason=focus` in consecutive
+## seconds after the duel ended, and the process never exited. Nothing was wrong
+## with the duel; the cursor grab was.
+##
+## RELEASING is never guarded. If capture somehow happened, letting go must always
+## be possible -- a guard that could strand a locked cursor is worse than no guard.
 func capture_mouse(on: bool) -> void:
+	if on and AiScreenshot.capturing:
+		return
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if on else Input.MOUSE_MODE_VISIBLE
 
 
