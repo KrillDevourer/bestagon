@@ -1,4 +1,4 @@
-﻿class_name Boss
+class_name Boss
 extends Enemy
 ## THE PRISM — a hexagonal core orbited by three shards.
 ##
@@ -227,6 +227,30 @@ func _advance_phase() -> void:
 func _on_phase(new_phase: int) -> void:
 	if new_phase == 2:
 		detach_shards()
+
+
+## Where the still-orbiting shards are, as offsets from the core in arena pixels.
+##
+## Public and read-only so ArenaStage can give each shard a body in 3D without
+## re-deriving the orbit. Re-deriving it would mean a second copy of the spin
+## rate, the count and the radius, and three copies of `_spin` drifting apart is
+## how the solid ends up orbited by shards that are not where its own shards are.
+##
+## Returns empty once they detach at phase 2, which is exactly right: the 3D
+## shards should vanish on the same frame the sprites do.
+func shard_offsets() -> PackedVector2Array:
+	var out: PackedVector2Array = PackedVector2Array()
+	for shard: Sprite2D in _shards:
+		if is_instance_valid(shard):
+			out.append(shard.position)
+	return out
+
+
+## How wide one shard is, in arena pixels. Derived from the same visual scale the
+## sprite uses rather than from a constant, so resizing a boss resizes both its
+## sprite shards and its solid ones together.
+func shard_pixel_size() -> float:
+	return stats.size * 0.385 if stats != null else 0.0
 
 
 func detach_shards() -> void:

@@ -108,6 +108,8 @@ var _tween: Tween
 var _solid_root: Node3D
 ## Boss (2D CharacterBody2D) -> MeshInstance3D standing in for it.
 var _solids: Dictionary = {}
+## Boss -> Array[MeshInstance3D], the solid bodies of its orbiting shards.
+var _shards: Dictionary = {}
 var _spin: float = 0.0
 
 
@@ -215,10 +217,40 @@ func attach_boss(boss: Enemy) -> void:
 	solid.visible = false
 	_solid_root.add_child(solid)
 	_solids[boss] = solid
+	_build_shards(boss, mat)
 	# tree_exited fires however the boss leaves -- killed, or freed wholesale on a
 	# restart -- so the solid cannot outlive its body. `died` alone would leak one
 	# per boss every time a run was restarted mid-fight.
 	boss.tree_exited.connect(_drop_boss.bind(boss))
+
+
+## Solid bodies for the shards that orbit a Prism.
+##
+## Built once at the count the boss starts with and then only ever HIDDEN, never
+## rebuilt: shards are shed at phase 2 and never come back, so allocating three
+## meshes up front costs nothing and spares the frame loop from creating nodes
+## while it walks a dictionary.
+##
+## The core's material is shared deliberately. A shard is a chip off the same
+## body, and giving it its own StandardMaterial3D would be three more materials
+## per boss that must be kept in agreement with the one they came from.
+func _build_shards(boss: Enemy, mat: StandardMaterial3D) -> void:
+	var big: Boss = boss as Boss
+	if big == null:
+		return
+	var pixels: float = big.shard_pixel_size()
+	if pixels <= 0.0:
+		return
+	var radius: float = (pixels * 0.5) / PIXELS_PER_UNIT
+	var pieces: Array[MeshInstance3D] = []
+	for i: int in Boss.SHARD_COUNT:
+		var chip: MeshInstance3D = MeshInstance3D.new()
+		chip.mesh = HexPrism.build(radius, radius * BOSS_HEIGHT_RATIO)
+		chip.material_override = mat
+		chip.visible = false
+		_solid_root.add_child(chip)
+		pieces.append(chip)
+	_shards[boss] = pieces
 
 
 func _drop_boss(boss: Enemy) -> void:
@@ -226,24 +258,95 @@ func _drop_boss(boss: Enemy) -> void:
 	if is_instance_valid(solid):
 		solid.queue_free()
 	_solids.erase(boss)
+	for chip: MeshInstance3D in _shards.get(boss, [] as Array[MeshInstance3D]):
+		if is_instance_valid(chip):
+			chip.queue_free()
+	_shards.erase(boss)
+
+
+## Mirror the 2D shards, reading their offsets off the boss rather than orbiting
+## independently. One spin, one radius, one count, one source — so a shard solid
+## can never end up somewhere its own sprite is not.
+##
+## Shed shards simply stop being reported, so they wink out on the same frame the
+## sprites do without this needing to know phase 2 exists.
+func _update_shards(boss: Enemy, showing: bool) -> void:
+	var pieces: Array[MeshInstance3D] = _shards.get(boss, [] as Array[MeshInstance3D])
+	if pieces.is_empty():
+		return
+	var big: Boss = boss as Boss
+	var offsets: PackedVector2Array = big.shard_offsets() if big != null \
+			else PackedVector2Array()
+	var pixels: float = big.shard_pixel_size() if big != null else 0.0
+	var lift: float = (pixels * 0.5 / PIXELS_PER_UNIT) * BOSS_HEIGHT_RATIO
+	for i: int in pieces.size():
+		var chip: MeshInstance3D = pieces[i]
+		if not is_instance_valid(chip):
+			continue
+		# Fewer offsets than meshes means that shard has been shed. Each chip is
+		# culled on its OWN position rather than the core's: shards orbit up to
+		# 112px out, so one can be off-screen while the body it belongs to is not.
+		var at: Vector2 = boss.global_position + offsets[i] if i < offsets.size() \
+				else Vector2.ZERO
+		if not showing or i >= offsets.size() or not _near_view(at):
+			chip.visible = false
+			continue
+		chip.visible = true
+		chip.scale.y = _tilt
+		chip.position = _floor_point(boss.global_position + offsets[i]) \
+				+ Vector3(0.0, lift * _tilt * 0.5, 0.0)
+		# Counter-spun against the core so the cluster reads as three separate
+		# objects in orbit rather than one rigid pinwheel.
+		chip.rotation.y = -_spin * 1.6
+
+
+## Where a world position sits inside the 640x360 window, in view pixels.
+##
+## The SubViewport is a window onto a 1280x720 arena, so a world position only
+## means something relative to where the Camera2D is currently looking -- which
+## is why this asks the viewport for its camera every frame instead of caching
+## one. The player's camera is the only Camera2D in there, and it moves.
+func _view_point(world_pos: Vector2) -> Vector2:
+	var cam: Camera2D = world_viewport.get_camera_2d()
+	if cam == null:
+		return Vector2(VIEW_SIZE) * 0.5
+	return world_pos - (cam.get_screen_center_position() - Vector2(VIEW_SIZE) * 0.5)
 
 
 ## Arena pixels to a point on the floor.
-##
-## The SubViewport is a 640x360 window onto a 1280x720 arena, so a world position
-## only means something relative to where the Camera2D is currently looking --
-## which is why this asks the viewport for its camera every frame instead of
-## caching one. The player's camera is the only Camera2D in there, and it moves.
 func _floor_point(world_pos: Vector2) -> Vector3:
-	var cam: Camera2D = world_viewport.get_camera_2d()
-	if cam == null:
-		return Vector3.ZERO
-	var top_left: Vector2 = cam.get_screen_center_position() - Vector2(VIEW_SIZE) * 0.5
-	var on_screen: Vector2 = world_pos - top_left
+	var on_screen: Vector2 = _view_point(world_pos)
 	return Vector3(
 			(on_screen.x / float(VIEW_SIZE.x) - 0.5) * FLOOR_SIZE.x,
 			0.0,
 			(on_screen.y / float(VIEW_SIZE.y) - 0.5) * FLOOR_SIZE.y)
+
+
+## How far outside the window a solid may sit and still be drawn. DELIBERATELY
+## TINY, and paid for once already.
+##
+## The first version padded by the object's own size so a boss half off the edge
+## would still show its half. That is the right instinct in 2D and completely
+## wrong here: the floor quad ENDS at the edge of the view, so padding by 70px
+## let a boss 60px above the top edge through, and it mapped to z = -2.4 against
+## a quad whose far edge is -1.8. Off the floor, out in the void, and under a
+## tilted camera "past the far edge" reads as UP IN THE SKY. The 5:00 event
+## spawns two Prisms on opposite sides of the arena and one is routinely
+## off-screen, so every boss fight grew a second Prism hanging in the air,
+## shards and all.
+##
+## A few pixels only, to stop something sitting exactly on the boundary from
+## flickering. Anything further out is simply not on the floor, and the 2D game
+## does not draw an off-screen enemy either.
+const VIEW_CULL_PAD: float = 4.0
+
+
+## Is this world position actually ON the visible floor?
+func _near_view(world_pos: Vector2) -> bool:
+	var p: Vector2 = _view_point(world_pos)
+	return p.x > -VIEW_CULL_PAD and p.y > -VIEW_CULL_PAD \
+			and p.x < float(VIEW_SIZE.x) + VIEW_CULL_PAD \
+			and p.y < float(VIEW_SIZE.y) + VIEW_CULL_PAD
 
 
 ## Solids track their bodies every frame and GROW OUT OF THE FLOOR as the world
@@ -258,8 +361,13 @@ func _update_solids(delta: float) -> void:
 		var solid: MeshInstance3D = _solids[boss] as MeshInstance3D
 		if not is_instance_valid(body) or not is_instance_valid(solid):
 			continue
-		solid.visible = showing
-		if not showing:
+		# Culled against the window, not just the tilt. See _near_view: an
+		# off-screen boss maps past the far edge of the floor, which under a
+		# tilted camera is up in the sky.
+		var here: bool = showing and _near_view(body.global_position)
+		solid.visible = here
+		_update_shards(body, here)
+		if not here:
 			continue
 		var base: Vector3 = _floor_point(body.global_position)
 		# The mesh is centred on its own origin, so lifting it by half its scaled
