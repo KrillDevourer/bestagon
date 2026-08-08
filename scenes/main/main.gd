@@ -496,6 +496,9 @@ func _on_boss_spawned(boss: Node2D) -> void:
 	# NOGAXEH plus two escorts in a single tick — enter_boss retargets one tween
 	# rather than stacking three, so that is a no-op after the first.
 	stage.enter_boss()
+	# ...and the boss gets a body in it. The 2D sprite stays put underneath as the
+	# solid's footprint, so at zero tilt nothing has changed at all.
+	stage.attach_boss(boss as Enemy)
 	boss.died.connect(_on_enemy_died)
 	boss.died.connect(_on_boss_killed)
 	var mirror: Nogaxeh = boss as Nogaxeh
