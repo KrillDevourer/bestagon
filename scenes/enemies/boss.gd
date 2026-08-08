@@ -40,6 +40,19 @@ const DASH_TIME: float = 0.55
 @export var bolt_speed: float = 122.0
 @export var shard_orbit: float = 80.0
 
+## SIDES of this boss's 3D solid, and it must match the sprite's silhouette.
+##
+## Per-scene rather than in EnemyStats because the SPRITE is per-scene: the .tres
+## files carry no texture, so the shape and the number describing it belong in the
+## same place. 5 is the Prism's pentagon; nogaxeh.tscn overrides it to 6.
+##
+## THE HEXAGON IS RESERVED. tools/gen_assets.py: the player is the only hexagon in
+## the game, "nothing else may claim six sides", until NOGAXEH at 10:00 -- "and
+## the break IS the reveal". The 3D solid shipped hardcoded to six, which put the
+## player's own silhouette under THE PRISM at 5:00 and spent that reveal five
+## minutes early. Nothing errored. It was only wrong.
+@export_range(3, 12) var solid_sides: int = PolyPrism.DEFAULT_SIDES
+
 ## HP FRACTIONS at which the phase advances, in descending order. The Prism keeps
 ## its single threshold, so its two-phase fight is unchanged; Nogaxeh sets two and
 ## gets three phases. Exported so a boss's shape is data, like everything else.

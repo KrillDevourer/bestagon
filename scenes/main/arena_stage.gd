@@ -247,7 +247,7 @@ func attach_boss(boss: Enemy) -> void:
 	mat.emission_energy_multiplier = 0.35
 
 	var solid: MeshInstance3D = MeshInstance3D.new()
-	solid.mesh = HexPrism.build(radius, height)
+	solid.mesh = PolyPrism.build(radius, height, _sides_of(boss))
 	solid.material_override = mat
 	solid.visible = false
 	_solid_root.add_child(solid)
@@ -280,12 +280,26 @@ func _build_shards(boss: Enemy, mat: StandardMaterial3D) -> void:
 	var pieces: Array[MeshInstance3D] = []
 	for i: int in Boss.SHARD_COUNT:
 		var chip: MeshInstance3D = MeshInstance3D.new()
-		chip.mesh = HexPrism.build(radius, radius * BOSS_HEIGHT_RATIO)
+		chip.mesh = PolyPrism.build(radius, radius * BOSS_HEIGHT_RATIO, _sides_of(boss))
 		chip.material_override = mat
 		chip.visible = false
 		_solid_root.add_child(chip)
 		pieces.append(chip)
 	_shards[boss] = pieces
+
+
+## How many sides this boss's solid has. Read off the boss, because the number
+## has to agree with the SPRITE underneath it: the Prism is a pentagon and Nogaxeh
+## is the game's one hostile hexagon, and a solid that disagrees with its own
+## footprint is the bug this parameter exists to prevent.
+##
+## Falls back to the Prism's pentagon for anything that is not a Boss. Five is the
+## safe default here and six would not be — gen_authors reserve the hexagon for
+## the player, so guessing wrong in that direction is a silhouette collision
+## rather than a slightly odd shape.
+func _sides_of(boss: Enemy) -> int:
+	var big: Boss = boss as Boss
+	return big.solid_sides if big != null else PolyPrism.DEFAULT_SIDES
 
 
 func _drop_boss(boss: Enemy) -> void:

@@ -187,7 +187,10 @@ func _build_boss() -> void:
 	mat.emission_energy_multiplier = 0.35
 
 	_boss = MeshInstance3D.new()
-	_boss.mesh = HexPrism.build(BOSS_RADIUS, BOSS_HEIGHT)
+	# FIVE sides, matching THE PRISM's pentagon sprite. This harness asked for a
+	# hexagon back when the mesh builder only made those, which is how a hexagonal
+	# Prism reached the real game -- see PolyPrism's header.
+	_boss.mesh = PolyPrism.build(BOSS_RADIUS, BOSS_HEIGHT, PolyPrism.DEFAULT_SIDES)
 	_boss.material_override = mat
 	add_child(_boss)
 

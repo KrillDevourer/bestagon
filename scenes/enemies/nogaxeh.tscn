@@ -39,6 +39,12 @@ p1_interval = 2.2
 p2_interval = 1.25
 shard_orbit = 112.0
 bolt_speed = 118.0
+; SIX SIDES, and this is the ONLY thing in the game besides the player allowed
+; them. gen_assets.py reserves the hexagon -- "nothing else may claim six sides"
+; -- and Nogaxeh breaks that rule exactly once, here, at 10:00, because the break
+; IS the reveal. The sprite is boss_mirror.png, a hollow hexagon; the solid has to
+; agree with it or the reveal lands on a shape that is not the one being revealed.
+solid_sides = 6
 
 ; Drawn only while dashing. top_level so it stays in world space instead of
 ; being dragged along by the boss it belongs to.
