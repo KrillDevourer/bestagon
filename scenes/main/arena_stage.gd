@@ -128,10 +128,45 @@ func _ready() -> void:
 	_apply(0.0)
 
 
+## THE VOID BEHIND THE ARENA.
+##
+## Leaning the floor over opens up space above and around it that the flat game
+## never had. Left as one flat colour it reads as the render failing rather than
+## as a place, and a tall boss standing at the far edge protrudes into nothing.
+##
+## A sky rather than a plane, because the horizon has to sit exactly where the
+## floor's far edge does at every tilt angle, and a modelled backdrop would have
+## to be re-placed every time MAX_TILT_DEG moved. A gradient is always in the
+## right place because it has no place.
+##
+## Deep navy above, a slightly warmer band at the horizon: the arena's own floor
+## palette continued outward, so the void reads as more of the same world rather
+## than as the edge of the level. Kept dark enough that nothing out there
+## competes with a bullet for attention.
+const VOID_TOP: Color = Color(0.026, 0.026, 0.05)
+const VOID_HORIZON: Color = Color(0.10, 0.09, 0.17)
+const VOID_FLOOR: Color = Color(0.04, 0.04, 0.07)
+
+
 func _build_environment() -> void:
 	var env: Environment = Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = BACKDROP
+	var sky_mat: ProceduralSkyMaterial = ProceduralSkyMaterial.new()
+	sky_mat.sky_top_color = VOID_TOP
+	sky_mat.sky_horizon_color = VOID_HORIZON
+	sky_mat.ground_bottom_color = VOID_FLOOR
+	sky_mat.ground_horizon_color = VOID_HORIZON
+	# No sun disk. There is no light source in this fiction, and a bright blob
+	# parked in the backdrop would be the brightest thing on a screen whose whole
+	# readability rests on bullets being the brightest thing on it.
+	sky_mat.sun_angle_max = 0.0
+	sky_mat.energy_multiplier = 1.0
+	var sky: Sky = Sky.new()
+	sky.sky_material = sky_mat
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	# The sky is scenery, NOT a light source. Letting it light the scene would
+	# make the boss solids take their colour from the backdrop instead of from
+	# the tint the colour law gave them.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.30, 0.32, 0.45)
 	env.ambient_light_energy = 1.0
