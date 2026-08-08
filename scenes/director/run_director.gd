@@ -232,7 +232,12 @@ func _check_boss_event() -> void:
 			_mirror.raise_shield()
 			_spawn_escorts(event, MIRROR_ESCORTS_OPENING)
 	else:
-		var count: int = schedule.bosses_at_event(event)
+		# ONE boss for a duel event. A 1v1 cannot have escorts, and the count is
+		# forced HERE rather than by removing extras afterwards: bosses_alive is
+		# incremented in _spawn_boss and decremented only by a death, so a boss
+		# taken out of the fight any other way would leave the count non-zero and
+		# the event would never clear.
+		var count: int = 1 if duels(event) else schedule.bosses_at_event(event)
 		for i: int in count:
 			_spawn_boss(boss_scene, i, count, event, hp_scale, false)
 	_publish_intensity()
@@ -296,6 +301,33 @@ func _on_escort_died(_xp_value: int, _at: Vector2, _tint: Color) -> void:
 ## duration (spec, M7.2): the six Prisms are the only company, which is what lets
 ## their guaranteed health drops be the fight's entire sustain and what makes one
 ## enormous shape holding still opposite you land as dread rather than as noise.
+## Boss events that resolve as a FIRST-PERSON DUEL instead of an arena fight.
+##
+## EVENT 0 ONLY, and that is a deliberate limit rather than an oversight. The
+## MIRROR event's escorts are load-bearing: Nogaxeh is invulnerable through phase 1
+## until they die, so an event that suppressed them would spawn a boss that cannot
+## be damaged in the arena at all. Making 10:00 duel needs its own pass over that
+## shield gate, not a wider entry in this array.
+##
+## Endless repeats of the Prism event (2, 3, ...) stay arena fights too: back-to-
+## back duels every five minutes would make the pacing of a long run one shape.
+@export var duel_events: PackedInt32Array = PackedInt32Array([0])
+
+
+func duels(event: int) -> bool:
+	return duel_events.has(event)
+
+
+## Which boss event is currently live, or -1 before the first one.
+##
+## `_next_boss_event` is incremented BEFORE the bosses spawn, so the live event is
+## always one behind it. Public because Main has to know whether the boss it was
+## just handed belongs to a duel, and the boss_spawned signal deliberately carries
+## only the boss.
+func active_boss_event() -> int:
+	return _next_boss_event - 1
+
+
 func mirror_active() -> bool:
 	return is_instance_valid(_mirror)
 

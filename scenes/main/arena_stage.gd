@@ -111,6 +111,10 @@ var _solids: Dictionary = {}
 ## Boss -> Array[MeshInstance3D], the solid bodies of its orbiting shards.
 var _shards: Dictionary = {}
 var _spin: float = 0.0
+var _world: WorldEnvironment
+var _key: DirectionalLight3D
+## Kept so resume() can put back exactly what suspend() removed.
+var _environment: Environment
 
 
 func _ready() -> void:
@@ -170,17 +174,18 @@ func _build_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.30, 0.32, 0.45)
 	env.ambient_light_energy = 1.0
-	var world: WorldEnvironment = WorldEnvironment.new()
-	world.environment = env
-	add_child(world)
+	_world = WorldEnvironment.new()
+	_environment = env
+	_world.environment = env
+	add_child(_world)
 
 	# One key light. The floor is unshaded, so this exists only for the solids
 	# that will later stand on it — without it a flat-shaded prism renders as one
 	# flat hexagon and looks exactly like the sprite it replaced.
-	var key: DirectionalLight3D = DirectionalLight3D.new()
-	key.rotation_degrees = Vector3(-52.0, -34.0, 0.0)
-	key.light_energy = 1.15
-	add_child(key)
+	_key = DirectionalLight3D.new()
+	_key.rotation_degrees = Vector3(-52.0, -34.0, 0.0)
+	_key.light_energy = 1.15
+	add_child(_key)
 
 
 ## The arena, lying flat in XZ so "up out of the floor" is simply +Y. QuadMesh is
@@ -483,3 +488,39 @@ func _apply(k: float) -> void:
 ## copy of the clock and drifting out of phase with the camera.
 func tilt() -> float:
 	return _tilt
+
+
+## Stand down entirely, for the duration of a first-person duel.
+##
+## Hiding and disabling this node is NOT enough, and the first live test proved it:
+## the duel shares this scene's World3D, so the arena's Camera3D stayed `current`
+## and the duel rendered as a black silhouette seen from the 2D game's top-down eye.
+## A hidden WorldEnvironment still owns the world's environment and a hidden
+## DirectionalLight3D is the only one that actually stops lighting, so both have to
+## be taken down by hand.
+##
+## The duel claims the camera itself -- see DuelPlayer._ready -- because the thing
+## that needs a camera should be the thing that asks for one.
+func suspend() -> void:
+	visible = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+	if is_instance_valid(_world):
+		_world.environment = null
+	if is_instance_valid(_key):
+		_key.visible = false
+	if is_instance_valid(_camera):
+		_camera.current = false
+
+
+## Come back. Reclaiming `current` is what returns the view to the arena; the duel's
+## camera is freed with its scene, and a world with no current camera renders
+## nothing at all.
+func resume() -> void:
+	visible = true
+	process_mode = Node.PROCESS_MODE_INHERIT
+	if is_instance_valid(_world):
+		_world.environment = _environment
+	if is_instance_valid(_key):
+		_key.visible = true
+	if is_instance_valid(_camera):
+		_camera.current = true

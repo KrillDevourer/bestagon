@@ -309,6 +309,26 @@ func clear_invuln() -> void:
 	health.clear_invuln()
 
 
+## End the run outright, for a cause that has already been decided elsewhere.
+##
+## ONE caller: a lost first-person duel. That fight runs on its own Health seeded
+## from this one, so THIS object's `died` never fired and the run still has to end
+## the way every other death ends. Routed through the same handler as an ordinary
+## death rather than reimplementing the teardown, because a game with two endings
+## has two endings to keep in agreement.
+##
+## Deliberately NOT apply_damage: that is gated by i-frames and by Second Wind, and
+## either of them silently refusing would leave a player standing in an arena they
+## have already lost.
+func kill(source: StringName) -> void:
+	if health.hp <= 0:
+		return
+	last_hit_by = source
+	last_hit_source = source
+	health.set_hp(0)
+	_on_died()
+
+
 ## Public damage entry point. Contact damage and enemy projectiles both come
 ## through here so i-frames, the hurt cue and screenshake can never disagree.
 ## Returns true if the damage actually landed.

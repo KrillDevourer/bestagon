@@ -77,6 +77,12 @@ var _time: float = 0.0
 
 func _ready() -> void:
 	camera.position = Vector3(0.0, EYE_HEIGHT, 0.0)
+	# TAKE THE CAMERA. ArenaStage's Camera3D is `current` for the whole 2D run and
+	# lives in the SAME World3D as this scene, so without claiming it the duel is
+	# rendered from the arena's top-down eye: the first live test showed the duel
+	# boss as a black silhouette over the 2D floor grid, with the duel HUD correctly
+	# on top of it. Two cameras in one world, and the wrong one was winning.
+	camera.current = true
 	if health == null:
 		# Standalone inspection only. A real duel is handed the run's own Health.
 		health = Health.new(12, HIT_IFRAMES)

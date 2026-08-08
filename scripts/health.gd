@@ -39,6 +39,23 @@ func take_damage(amount: int, now: float) -> bool:
 	return true
 
 
+## Write HP directly, clamped, announcing the change.
+##
+## Exists for ONE caller: handing the result of a first-person duel back to the
+## run. The duel fights on its own Health seeded from this one, so that a death in
+## there cannot fire this object's `died` mid-scene and stack a game-over screen
+## underneath a duel that is still on screen. Coming back, the outcome has to be
+## written across, and neither `take_damage` nor `heal` can do it -- take_damage is
+## gated by i-frames and would sometimes silently refuse.
+##
+## Deliberately does NOT emit `died` at zero. A duel loss is routed through the
+## run's normal death path by its caller, and having two places able to start a
+## game-over is how you get two of them.
+func set_hp(value: int) -> void:
+	hp = clampi(value, 0, max_hp)
+	changed.emit(hp, max_hp)
+
+
 func heal(amount: int) -> void:
 	if hp <= 0:
 		return

@@ -114,6 +114,22 @@ var _tele_t: float = 0.0
 ##
 ## The UI does NOT move. Every screen is a CanvasLayer and stays a direct child
 ## of Main, which keeps it in the root viewport and flat while the world tilts.
+## The first-person duel. Added alongside the frozen arena, never instead of it --
+## see _enter_duel for why the 2D world is disabled rather than unloaded.
+const DUEL_SCENE: PackedScene = preload("res://scenes/duel/duel_arena.tscn")
+## Base per-shot damage the duel weapon is scaled FROM, before the run's upgrades
+## are applied by Stats.damage_from. Sized so an un-upgraded one-weapon build can
+## still finish a duel, rather than so a maxed build feels fair -- the ceiling is
+## easier to tune down later than the floor is to discover.
+const DUEL_BASE_DAMAGE: int = 4
+
+## Non-null only while a duel is on. Also the guard that stops a second boss in the
+## same tick from opening a second duel.
+var _duel: DuelArena = null
+## The 2D boss the duel stands in for. Killed through the normal path on a win, so
+## the director's bookkeeping and the reward chain never learn a duel happened.
+var _duel_boss: Boss = null
+
 @onready var stage: ArenaStage = $ArenaStage
 @onready var player: Player = $ArenaStage/WorldViewport/Player
 @onready var bosses: Node2D = $ArenaStage/WorldViewport/Bosses
@@ -495,12 +511,23 @@ func _on_boss_spawned(boss: Node2D) -> void:
 	# The world leans. Called per BOSS, not per event, and the 10:00 event spawns
 	# NOGAXEH plus two escorts in a single tick — enter_boss retargets one tween
 	# rather than stacking three, so that is a no-op after the first.
+	boss.died.connect(_on_enemy_died)
+	boss.died.connect(_on_boss_killed)
+	# A DUEL EVENT leaves the arena entirely, so none of the 2D presentation below
+	# applies: no tilt, no 3D solid on the floor, no boss bar accumulated, no
+	# banner. The duel has its own HUD and announces itself by existing.
+	#
+	# The death signals above are still wired first, and that ordering is
+	# load-bearing: winning a duel kills this boss through the normal path so the
+	# director's bookkeeping, the XP drop, the victory chain and the event clear all
+	# fire exactly as they would have from an arena kill.
+	if director.duels(director.active_boss_event()):
+		_enter_duel(boss as Boss)
+		return
 	stage.enter_boss()
 	# ...and the boss gets a body in it. The 2D sprite stays put underneath as the
 	# solid's footprint, so at zero tilt nothing has changed at all.
 	stage.attach_boss(boss as Enemy)
-	boss.died.connect(_on_enemy_died)
-	boss.died.connect(_on_boss_killed)
 	var mirror: Nogaxeh = boss as Nogaxeh
 	if mirror != null:
 		mirror.fuse_lit.connect(_on_fuse_lit)
@@ -536,6 +563,84 @@ func _on_boss_spawned(boss: Node2D) -> void:
 	# a near-empty arena, no boss. The marker stays — a run-beat line costs
 	# nothing and still says which side of a spawn a later freeze landed on.)
 	print("[boss] spawned t=%.0fs alive=%d" % [time_survived, director.bosses_alive])
+
+
+## LEAVE THE ARENA. The 2D world is frozen and hidden and a first-person duel is
+## added alongside it; when the duel resolves the arena comes back.
+##
+## FROZEN, NOT UNLOADED. change_scene_to_* would destroy this node and every piece
+## of run state hanging off it -- level, upgrades, kills, the RNG stream. Disabling
+## the stage's process mode stops the 2D player, the boss, the spawner's children
+## and the physics inside the SubViewport in one line, and hiding it stops the
+## render. Nothing in the arena advances while a duel is on.
+##
+## THE DUEL FIGHTS ON ITS OWN HEALTH, seeded from the run's. Sharing the object
+## would be tidier and is wrong: the shared Health would emit `died` the instant
+## duel damage reached zero, which fires the run's game-over chain while the duel
+## is still on screen and stacks two outcomes on top of each other. Seeding and
+## writing back keeps exactly one thing able to end a run.
+## What the duel's boss bar is titled. The same two names the 2D HUD uses, so the
+## thing the player is fighting is called what it has always been called.
+##
+## NOGAXEH is named outright here rather than flipped from HEXAGON as the 2D banner
+## does: that flip is a reveal staged over a couple of seconds against a boss that
+## has just walked on screen, and a health bar that renamed itself mid-fight would
+## read as a glitch instead of a reveal.
+func _boss_title(boss: Boss) -> String:
+	return "NOGAXEH" if boss is Nogaxeh else "THE PRISM"
+
+
+func _enter_duel(boss: Boss) -> void:
+	if boss == null or _duel != null:
+		return
+	_duel_boss = boss
+	# suspend(), not visible=false: the duel shares this scene's World3D, so the
+	# arena's environment, key light and camera all have to stand down explicitly.
+	stage.suspend()
+	hud.visible = false
+
+	var duel: DuelArena = DUEL_SCENE.instantiate()
+	duel.boss_stats = boss.stats
+	duel.boss_sides = boss.solid_sides
+	duel.boss_title = _boss_title(boss)
+	# A copy at the run's current HP, not the run's own object. See above.
+	var carried: Health = Health.new(player.health.max_hp)
+	carried.set_hp(player.health.hp)
+	duel.player_health = carried
+	# The build, collapsed into one weapon. `damage_from` is what a 2D weapon asks
+	# for its own damage, so an upgraded run hits harder in here too.
+	var per_shot: int = maxi(1, roundi(player.stats.damage_from(DUEL_BASE_DAMAGE)))
+	duel.weapon_damage = DuelWeapon.derive(player.active_weapon_count(), per_shot).x
+	duel.finished.connect(_on_duel_finished)
+	add_child(duel)
+	_duel = duel
+	Telemetry.event(&"duel_start", {"event": director.active_boss_event()})
+	print("[duel] entered t=%.0fs boss=%s hp=%d" % [time_survived, boss.stats.id, boss.max_hp])
+
+
+## Back to the arena, carrying the result.
+func _on_duel_finished(won: bool) -> void:
+	if _duel != null:
+		# The duel's Health is the authority on what the fight cost; write it across
+		# before anything can read the run's HP again.
+		player.health.set_hp(_duel.player_health.hp)
+		_duel.queue_free()
+		_duel = null
+	stage.resume()
+	hud.visible = true
+	print("[duel] finished won=%s hp=%d" % [str(won), player.health.hp])
+	if won:
+		if is_instance_valid(_duel_boss):
+			# The duel already decided this. Nogaxeh's shield would otherwise absorb
+			# the killing blow and leave an event that can never clear.
+			_duel_boss.invulnerable = false
+			_duel_boss.take_hit(_duel_boss.hp)
+	else:
+		# ONE death path for the whole game. Routed through the player rather than
+		# handled here, so the game-over screen, the telemetry and the shard payout
+		# are the same ones every other death in the run uses.
+		player.kill(&"duel")
+	_duel_boss = null
 
 
 ## Name the thing that just arrived. The 5:00 event used to appear with a sound
