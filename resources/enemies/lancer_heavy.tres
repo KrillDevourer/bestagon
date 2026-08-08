@@ -15,4 +15,3 @@ size = 21.0
 sprite = ExtResource("2_f4vci")
 attack_range = 230.0
 attack_interval = 1.15
-bolt_speed = 165.0

@@ -1,4 +1,4 @@
-﻿class_name Enemy
+class_name Enemy
 extends CharacterBody2D
 ## Chases its target. All numbers come from an EnemyStats resource —
 ## new enemy types are .tres files, not new scripts.
@@ -237,6 +237,18 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 
+## How fast the thing being shot at is actually moving, for leading a shot.
+##
+## Read defensively rather than typed as Player: `target` is a Node2D by
+## contract, the dev harnesses aim enemies at stand-ins that are not the player,
+## and a lead that hard-casts would crash the moment one of them did. A target
+## with no velocity is simply not led, which is the correct answer for a
+## stationary one anyway.
+func _target_velocity() -> Vector2:
+	var body: CharacterBody2D = target as CharacterBody2D
+	return body.velocity if body != null else Vector2.ZERO
+
+
 ## Holds its preferred range and shoots. Backs off when crowded in, closes when
 ## too far — so the player cannot simply walk away from it either.
 func _act_ranged(delta: float) -> void:
@@ -256,8 +268,24 @@ func _act_ranged(delta: float) -> void:
 		# Quiet: with several Lancers alive this fires constantly, and the cue's
 		# job is "incoming from off-screen", not percussion.
 		Sfx.play(&"bolt", -16.0)
+		var profile: BoltProfile = stats.bolt_profile()
+		# THE SECOND LAW: light bullets aim where you WILL BE, heavy ones where
+		# you ARE. A fast bullet on a line to where you were standing is dodged by
+		# walking; being LED is what actually costs you something. So the light
+		# tier has to break your rhythm and the heavy tier has to punish standing
+		# still, and they are dodged differently rather than at two speeds.
+		var aim: Vector2 = target.global_position
+		if profile.leads_target:
+			aim = BoltProfile.lead_point(global_position, target.global_position,
+					_target_velocity(), profile.speed)
+		var shot: Vector2 = (aim - global_position).normalized()
+		# Degenerate only if the lead lands exactly on the muzzle. Falling back to
+		# the unled direction beats firing a zero vector, which is a bolt that
+		# sits on the shooter for its whole six-second lifetime.
+		if shot.length_squared() < 0.01:
+			shot = dir
 		var bolt: EnemyProjectile = BOLT_SCENE.instantiate()
-		bolt.setup(dir * stats.bolt_speed, damage)
+		bolt.setup(shot * profile.speed, profile.damage, profile)
 		bolt.global_position = global_position
 		_bolt_parent().add_child(bolt)
 

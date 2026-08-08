@@ -15,4 +15,3 @@ size = 18.5
 sprite = ExtResource("2_kxk06")
 attack_range = 195.0
 attack_interval = 1.9
-bolt_speed = 140.0

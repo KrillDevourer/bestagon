@@ -165,6 +165,28 @@ func _tick_dash(delta: float, dir: Vector2) -> void:
 	dashed.emit(global_position)
 
 
+## True only while the dash is MOVING — deliberately not the whole i-frame
+## window, which outlasts it (DASH_IFRAMES 0.26 against DASH_TIME 0.15).
+##
+## That gap is the difference between a dash that saves you and a dash that
+## deflects. The i-frames are generous on purpose: a dash that ends next to a
+## bullet should still spare you, because punishing a correct escape by two
+## frames is the kind of death BRIEF defect #4 is about. Deflection cannot be
+## that generous. If it used the same window every dash would deflect, and a
+## parry that happens whether or not you aimed it is not a parry.
+func is_deflecting() -> bool:
+	return _dash_left > 0.0
+
+
+## Which way the current dash is going. Public because a deflected bolt leaves
+## along it: sending the bolt back at whoever fired it sounds right and plays
+## badly, since the shooter is usually the one enemy already at a safe distance.
+## Aiming it with the dash makes the player pick the target, which is the whole
+## reason it is a skill rather than a refund.
+func dash_direction() -> Vector2:
+	return _dash_dir
+
+
 ## True while the dash is on cooldown, plus how far through it is (0..1). The HUD
 ## needs both: a dash you cannot see the cooldown of is a dash you spam blindly.
 func dash_ready_fraction() -> float:

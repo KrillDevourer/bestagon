@@ -80,7 +80,20 @@ enum Behavior { CHASE, RANGED, CHARGE }
 ## RANGED only: the distance it tries to hold, and how often it fires.
 @export var attack_range: float = 190.0
 @export var attack_interval: float = 2.4
-@export var bolt_speed: float = 135.0
+
+## OVERRIDE, not the source of truth. 0 means "use the law" — see BoltProfile.
+##
+## Bullet speed is DERIVED from the enemy's own mass now, because authoring it by
+## hand had already gone wrong in the shipped data and nobody had noticed:
+## `lancer` (4 HP, 66 speed) fired at 140 while `lancer_heavy` (9 HP, 58 speed)
+## fired at 165. The heavier, slower, more deliberate-looking enemy had the
+## FASTER bullet — exactly backwards from what its silhouette promises, and the
+## kind of mistake that is invisible in a .tres and unmissable in play.
+##
+## Left as an override rather than deleted so a future enemy whose whole identity
+## is a wrong-feeling bullet can still have one. It has to be a deliberate
+## exception to a rule, not the absence of a rule.
+@export var bolt_speed: float = 0.0
 
 @export_group("Charge")
 ## CHARGE only. Telegraph, then a fast straight dash, then a recovery it cannot
@@ -95,6 +108,25 @@ enum Behavior { CHASE, RANGED, CHARGE }
 
 var _scene_cache: PackedScene
 var _split_cache: Resource
+var _bolt_cache: BoltProfile
+
+
+## The bullet this type fires. Derived from its own HP and speed, so every enemy
+## — including ones not designed yet — gets a bullet that matches how it reads
+## without anybody choosing numbers for it. See BoltProfile for the two laws.
+##
+## Cached because it is asked for on every shot and the answer cannot change: it
+## depends only on authored stats, and a Resource's authored stats do not move at
+## runtime. The difficulty HP multiplier deliberately does NOT feed it — a wave-6
+## Lancer is the same Lancer with more health, and having its bullet quietly grow
+## heavier as the run went on would break the promise that bullet size means one
+## fixed thing.
+func bolt_profile() -> BoltProfile:
+	if _bolt_cache == null:
+		_bolt_cache = BoltProfile.derive(max_hp, speed)
+		if bolt_speed > 0.0:
+			_bolt_cache.speed = bolt_speed
+	return _bolt_cache
 
 
 ## HP this type spawns with under a difficulty multiplier. Pure, so the scaling
