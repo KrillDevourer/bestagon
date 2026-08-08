@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/dev/arena_3d_check.gd" id="1_a3d"]
+
+[node name="Arena3DCheck" type="Node3D"]
+script = ExtResource("1_a3d")
