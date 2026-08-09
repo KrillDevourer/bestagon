@@ -625,6 +625,13 @@ func _enter_duel(boss: Boss) -> void:
 	# suspend(), not visible=false: the duel shares this scene's World3D, so the
 	# arena's environment, key light and camera all have to stand down explicitly.
 	stage.suspend()
+	# THE RUN'S CLOCK STOPS TOO. The director and the spawner are children of MAIN,
+	# not of the stage, so suspending the stage left them running: a duel that
+	# lasted 530 seconds in testing advanced `elapsed` the whole way through it and
+	# kept firing boss events into a frozen arena the player could not see. A duel
+	# is time out of the run, not time during it.
+	director.process_mode = Node.PROCESS_MODE_DISABLED
+	spawner.process_mode = Node.PROCESS_MODE_DISABLED
 	hud.visible = false
 
 	var duel: DuelArena = DUEL_SCENE.instantiate()
@@ -634,6 +641,15 @@ func _enter_duel(boss: Boss) -> void:
 	# A copy at the run's current HP, not the run's own object. See above.
 	var carried: Health = Health.new(player.health.max_hp)
 	carried.set_hp(player.health.hp)
+	# The FLAGS come across too. A copy that dropped them meant --dev-godmode
+	# stopped applying the moment a duel started: every soak run was invulnerable
+	# in the arena and mortal in the boss fight, which is the one place a soak most
+	# needs to survive. A dev flag that silently stops applying is worse than no
+	# flag, because the run keeps producing numbers and they are quietly about a
+	# different game. Same for an active Shield -- spending a duel is not a reason
+	# to lose a buff the player is still holding.
+	carried.invincible = player.health.invincible
+	carried.shielded = player.health.shielded
 	duel.player_health = carried
 	# The build, collapsed into one weapon. `damage_from` is what a 2D weapon asks
 	# for its own damage, so an upgraded run hits harder in here too.
@@ -655,6 +671,8 @@ func _on_duel_finished(won: bool) -> void:
 		_duel.queue_free()
 		_duel = null
 	stage.resume()
+	director.process_mode = Node.PROCESS_MODE_INHERIT
+	spawner.process_mode = Node.PROCESS_MODE_INHERIT
 	hud.visible = true
 	print("[duel] finished won=%s hp=%d" % [str(won), player.health.hp])
 	if won:
