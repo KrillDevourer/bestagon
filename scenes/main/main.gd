@@ -123,6 +123,11 @@ const DUEL_SCENE: PackedScene = preload("res://scenes/duel/duel_arena.tscn")
 ## easier to tune down later than the floor is to discover.
 const DUEL_BASE_DAMAGE: int = 4
 
+## Colour of the escort arrows. The Prism's own tint from the colour law, so the
+## arrow and the thing it points at are the same colour -- a cyan arrow would say
+## "yours" about a body that is very much not.
+const ESCORT_ARROW_TINT: Color = Color(1.0, 0.42, 0.85)
+
 ## Non-null only while a duel is on. Also the guard that stops a second boss in the
 ## same tick from opening a second duel.
 var _duel: DuelArena = null
@@ -718,12 +723,18 @@ func _update_boss_bar() -> void:
 		return
 	var hp: int = 0
 	var shielded: bool = false
+	# WHERE the escorts are, for the edge arrows. Collected in the loop that was
+	# already walking these bodies rather than in a second pass -- this runs every
+	# frame of a boss event.
+	var escorts: PackedVector2Array = PackedVector2Array()
 	for child: Node in bosses.get_children():
 		var boss: Boss = child as Boss
-		# Escorts are excluded from the NUMERATOR for the same reason they are
-		# excluded from the denominator — see _on_boss_spawned. Both halves have to
-		# agree or the bar reads as full for the whole fight.
 		if boss != null and boss.is_escort:
+			# Escorts are excluded from the NUMERATOR for the same reason they are
+			# excluded from the denominator — see _on_boss_spawned. Both halves have
+			# to agree or the bar reads as full for the whole fight.
+			if boss.hp > 0:
+				escorts.append(boss.global_position)
 			continue
 		var body: Enemy = child as Enemy
 		if body != null:
@@ -733,7 +744,28 @@ func _update_boss_bar() -> void:
 	hud.boss_bar.max_value = _boss_event_max_hp
 	hud.boss_bar.value = hp
 	hud.set_boss_shielded(shielded,
-			"NOGAXEH" if _boss_event_index == BOSS_EVENT_MIRROR else "THE PRISM")
+			"NOGAXEH" if _boss_event_index == BOSS_EVENT_MIRROR else "THE PRISM",
+			escorts.size() if shielded else -1)
+	_update_escort_arrows(shielded, escorts)
+
+
+## Point at the bodies gating a shielded boss.
+##
+## ONLY WHILE SHIELDED. Once the gate is open the escorts are ordinary enemies and
+## arrows over them would be noise -- and worse, they would train the player to
+## read the arrows as "enemy present" rather than as "this is what is stopping
+## you", which is the one thing they exist to say.
+##
+## Origin is the CAMERA's centre, not the player's. The two diverge under
+## screenshake and wherever the camera stops following at the arena's edge, and
+## using the player would aim every arrow slightly wrong in precisely the moments
+## the fight is most violent.
+func _update_escort_arrows(shielded: bool, escorts: PackedVector2Array) -> void:
+	if not shielded or escorts.is_empty():
+		hud.target_markers.clear()
+		return
+	hud.target_markers.track(player.camera.get_screen_center_position(), escorts,
+			ESCORT_ARROW_TINT)
 
 
 ## Applied mid-run AND announced. Both halves matter: the first is why a winner

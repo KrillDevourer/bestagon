@@ -17,6 +17,7 @@ extends CanvasLayer
 @onready var toast: Label = %LevelToast
 @onready var dash_label: Label = %DashLabel
 @onready var dash_pip: ProgressBar = %DashPip
+@onready var target_markers: TargetMarkers = %TargetMarkers
 
 ## Buff labels are POOLED, not rebuilt: this updates every frame, and churning
 ## Controls at 60Hz to show three words is the kind of thing that is invisible
@@ -28,6 +29,9 @@ var _shielded: bool = false
 ## are not the same thing: while shielded, the label shows the warning instead —
 ## see render_boss_name.
 var _boss_label: String = ""
+## Bodies still gating a shielded boss. -1 means "unknown", which keeps the old
+## wording rather than printing a count nobody supplied.
+var _gate_left: int = -1
 
 
 func set_health(hp: int, max_hp: int) -> void:
@@ -84,6 +88,8 @@ func set_boss(name_text: String, hp: int, max_hp: int) -> void:
 func hide_boss() -> void:
 	boss_panel.visible = false
 	_shielded = false
+	_gate_left = -1
+	target_markers.clear()
 	# Cleared with the panel, so the NEXT event cannot inherit the last one's
 	# name if it ever hides before its own set_boss lands.
 	_boss_label = ""
@@ -109,10 +115,17 @@ func hide_boss() -> void:
 ## name flip owns the label for its ~0.75s and then hands it back — so the
 ## sequence reads HEXAGON -> NOGAXEH -> SHIELDED, which is also the right order
 ## dramatically: who it is, then what to do about it.
-func set_boss_shielded(shielded: bool, label: String = "") -> void:
+func set_boss_shielded(shielded: bool, label: String = "",
+		gate_left: int = -1) -> void:
 	if label != "":
 		_boss_label = label
-	if shielded == _shielded:
+	# The COUNT changes while `shielded` does not, so it cannot sit behind the
+	# early-out below -- that guard exists to stop the label being rebuilt every
+	# frame, and a counter that only refreshed when the shield toggled would show
+	# the number the fight started with until the last escort died.
+	var count_changed: bool = gate_left != _gate_left
+	_gate_left = gate_left
+	if shielded == _shielded and not count_changed:
 		return
 	_shielded = shielded
 	render_boss_name()
@@ -121,7 +134,16 @@ func set_boss_shielded(shielded: bool, label: String = "") -> void:
 ## The single writer. Anything that changes either half calls this.
 func render_boss_name() -> void:
 	if _shielded:
-		boss_name.text = "SHIELDED — DESTROY THE PRISMS"
+		# The count is the difference between an instruction and PROGRESS. "DESTROY
+		# THE PRISMS" tells the player what to do and nothing about whether they
+		# are getting anywhere; the arrows say where, and this says how many are
+		# left to find.
+		if _gate_left > 1:
+			boss_name.text = "SHIELDED — %d PRISMS LEFT" % _gate_left
+		elif _gate_left == 1:
+			boss_name.text = "SHIELDED — 1 PRISM LEFT"
+		else:
+			boss_name.text = "SHIELDED — DESTROY THE PRISMS"
 		boss_name.add_theme_color_override(&"font_color", Color(0.78, 0.75, 1.0))
 		boss_bar.modulate = Color(0.55, 0.5, 0.62)
 	else:

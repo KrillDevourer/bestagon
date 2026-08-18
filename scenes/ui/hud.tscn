@@ -1,6 +1,7 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/ui/hud.gd" id="1_hud"]
+[ext_resource type="Script" path="res://scenes/ui/target_markers.gd" id="2_marks"]
 
 ; Neon HUD. Colour law (BRIEF.md §5): the HUD is the player's own instrument,
 ; so it lives in the cyan family — the magenta/orange band stays reserved for
@@ -56,6 +57,18 @@ border_color = Color(0.62, 0.18, 0.44, 1)
 
 [node name="Hud" type="CanvasLayer"]
 script = ExtResource("1_hud")
+
+; Edge arrows for things the player must kill and cannot see. FULL RECT and
+; MOUSE_FILTER_IGNORE: it covers the whole screen to draw on it and must never
+; intercept a click. Listed FIRST so every readable element draws over it --
+; an arrow is a hint, and a hint may never sit on top of the HP bar.
+[node name="TargetMarkers" type="Control" parent="."]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("2_marks")
 
 [node name="BossPanel" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
